@@ -1369,7 +1369,7 @@ pub trait ISession: IUnknown {
         interface_type: &mut SlangReflectionType,
         out_conformance: &mut [MaybeUninit<ITypeConformancePtr>],
         conformance_id_override: SlangInt,
-        out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
+        out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
     ) -> Result<()> {
         rw(unsafe {
             (ISession::vt(self).create_type_conformance_component_type)(
@@ -1391,7 +1391,7 @@ pub trait ISession: IUnknown {
         module_name: &CStr,
         path: &CStr,
         source: &impl IBlob,
-        out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
+        out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
     ) -> IModulePtr {
         IModulePtr(unsafe {
             NonNull::new_unchecked((ISession::vt(self).load_module_from_ir_blob)(
@@ -1440,7 +1440,7 @@ pub trait ISession: IUnknown {
         module_name: &CStr,
         path: &CStr,
         string: &CStr,
-        out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
+        out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
     ) -> IModulePtr {
         IModulePtr(unsafe {
             NonNull::new_unchecked((ISession::vt(self).load_module_from_source_string)(
@@ -1940,7 +1940,7 @@ pub trait IComponentType: IUnknown {
     fn get_target_metadata(
         &self,
         target_index: SlangInt,
-        out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
+        out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
     ) -> Result<IMetadataPtr> {
         let mut o = MaybeUninit::uninit();
         rw(unsafe {
@@ -1961,7 +1961,7 @@ pub trait IComponentType: IUnknown {
         &self,
         entry_point_index: SlangInt,
         target_index: SlangInt,
-        out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
+        out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
     ) -> Result<IMetadataPtr> {
         let mut o = MaybeUninit::uninit();
         rw(unsafe {
