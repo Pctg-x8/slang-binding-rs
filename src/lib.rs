@@ -2239,6 +2239,11 @@ pub trait IModule: IComponentType {
         }))
     }
 
+    #[inline(always)]
+    fn iter_defined_entry_point<'x>(&'x self) -> impl Iterator<Item = Result<IEntryPointPtr>> + 'x {
+        (0..self.get_defined_entry_point_count()).map(|n| self.get_defined_entry_point(n))
+    }
+
     fn serialize(&self) -> Result<IBlobPtr> {
         let mut o = MaybeUninit::uninit();
         rw(unsafe { (IModule::vt(self).serialize)(self.thisptr(), o.as_mut_ptr()) })?;

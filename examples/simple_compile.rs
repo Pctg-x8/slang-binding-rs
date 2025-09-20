@@ -32,23 +32,16 @@ fn main() {
     }
     let module = module.expect("Failed to load module");
 
-    let mut program_components =
-        Vec::with_capacity(1 + module.get_defined_entry_point_count() as usize);
-    program_components.push(
-        module
-            .clone_cast::<slang::IComponentTypePtr>()
-            .expect("failed to cast"),
+    let mut program_components = Vec::<slang::IComponentTypePtr>::with_capacity(
+        1 + module.get_defined_entry_point_count() as usize,
     );
-    for n in 0..module.get_defined_entry_point_count() {
-        program_components.push(
-            module
-                .get_defined_entry_point(n)
-                .expect("failed to get entry point")
-                .clone_cast()
-                .expect("failed to cast"),
-        );
-    }
-    let mut diag = MaybeUninit::zeroed();
+    program_components.push(module.clone_cast().expect("failed to cast"));
+    program_components.extend(module.iter_defined_entry_point().map(|x| {
+        x.expect("failed to get entry point")
+            .clone_cast()
+            .expect("failed to cast")
+    }));
+    let mut diag = MaybeUninit::new(None);
     let program = session.create_composite_component_type(&program_components, Some(&mut diag));
     if let Some(d) = unsafe { diag.assume_init() } {
         println!("diag: {:?}", unsafe {
@@ -57,23 +50,21 @@ fn main() {
     }
     let program = program.expect("failed to create program");
 
-    let mut diag = MaybeUninit::zeroed();
+    let mut diag = MaybeUninit::new(None);
     let layout = program.get_layout(0, Some(&mut diag));
     if let Some(d) = unsafe { diag.assume_init() } {
         println!("diag: {:?}", unsafe {
             CStr::from_ptr(d.get_buffer_pointer() as _)
         });
     }
-    for n in 0..layout.entry_point_count() {
-        let ep = layout.entry_point(n).expect("no entry point?");
+    for (n, ep) in layout.iter_entry_point().enumerate() {
         let fr = ep.function();
-        let name = fr.name();
+        let name = ep.name();
         let stage = ep.stage();
 
         println!("ep {n} {name:?} {stage}");
 
-        for np in 0..ep.parameter_count() {
-            let param = ep.parameter(np).expect("no parameter?");
+        for (np, param) in ep.iter_parameter().enumerate() {
             let pv = param.variable();
             let param_semantic_name = param.semantic_name();
             let param_type = pv.r#type();
@@ -94,8 +85,7 @@ fn main() {
 
         println!("  rt {rt_name:?} {rt_semantic_name:?}");
     }
-    for n in 0..layout.parameter_count() {
-        let param = layout.parameter(n).expect("no parameter?");
+    for (n, param) in layout.iter_parameter().enumerate() {
         let pv = param.variable();
         let param_semantic_name = param.semantic_name();
         let param_type = pv.r#type();
@@ -113,7 +103,7 @@ fn main() {
     let gcb_size = layout.global_constant_buffer_size();
     println!("global constant buffer: {gcb_binding} {gcb_size}");
 
-    let mut diag = MaybeUninit::zeroed();
+    let mut diag = MaybeUninit::new(None);
     let linked = program.link(Some(&mut diag));
     if let Some(d) = unsafe { diag.assume_init() } {
         println!("diag: {:?}", unsafe {
@@ -122,7 +112,7 @@ fn main() {
     }
     let linked = linked.expect("Failed to link");
 
-    let mut diag = MaybeUninit::zeroed();
+    let mut diag = MaybeUninit::new(None);
     let spv_code = linked.get_target_code(0, Some(&mut diag));
     if let Some(d) = unsafe { diag.assume_init() } {
         println!("diag: {:?}", unsafe {

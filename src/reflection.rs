@@ -11,6 +11,31 @@ pub use crate::ffi::{
     SlangReflectionGenericArg as GenericArg, SlangReflectionGenericArgType as GenericArgType,
 };
 
+macro_rules! iter_something {
+    ($name: ident, $refl: ty, $out_ty: ty, $getter_sym: path, $counter_type: ty) => {
+        pub struct $name<'x> {
+            refl: &'x $refl,
+            current: $counter_type,
+            count: $counter_type,
+        }
+        impl<'x> Iterator for $name<'x> {
+            type Item = &'x mut $out_ty;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.current >= self.count {
+                    return None;
+                }
+
+                let r = unsafe {
+                    <$out_ty>::from_mut_ptr($getter_sym(self.refl.0.get(), self.current))
+                };
+                self.current += 1;
+                Some(r)
+            }
+        }
+    };
+}
+
 #[repr(transparent)]
 pub struct Attribute(UnsafeCell<ffi::SlangReflectionUserAttribute>);
 impl Attribute {
@@ -148,6 +173,15 @@ impl Type {
     }
 
     #[inline(always)]
+    pub fn iter_field<'x>(&'x self) -> TypeFieldIterator<'x> {
+        TypeFieldIterator {
+            refl: self,
+            current: 0,
+            count: self.field_count(),
+        }
+    }
+
+    #[inline(always)]
     pub fn element_count(&self, reflection: Option<&Shader>) -> usize {
         unsafe {
             ffi::spReflectionType_GetSpecializedElementCount(
@@ -226,6 +260,15 @@ impl Type {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_user_attribute<'x>(&'x self) -> TypeUserAttributeIterator<'x> {
+        TypeUserAttributeIterator {
+            refl: self,
+            current: 0,
+            count: self.user_attribute_count(),
+        }
+    }
+
     pub fn find_user_attribute_by_name(&self, name: &CStr) -> Option<&mut Attribute> {
         let p =
             unsafe { ffi::spReflectionType_FindUserAttributeByName(self.0.get(), name.as_ptr()) };
@@ -254,6 +297,21 @@ impl Type {
         }
     }
 }
+
+iter_something!(
+    TypeFieldIterator,
+    Type,
+    Variable,
+    ffi::spReflectionType_GetFieldByIndex,
+    c_uint
+);
+iter_something!(
+    TypeUserAttributeIterator,
+    Type,
+    Attribute,
+    ffi::spReflectionType_GetUserAttribute,
+    c_uint
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -359,6 +417,15 @@ impl TypeLayout {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_field<'x>(&'x self) -> TypeLayoutFieldIterator<'x> {
+        TypeLayoutFieldIterator {
+            refl: self,
+            current: 0,
+            count: self.field_count(),
+        }
+    }
+
     #[inline]
     pub fn find_field_index_by_name(&self, name_begin: &CStr, name_end: Option<&CStr>) -> SlangInt {
         unsafe {
@@ -437,6 +504,15 @@ impl TypeLayout {
                 self.0.get(),
                 index,
             ))
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_category<'x>(&'x self) -> TypeLayoutCategoryIterator<'x> {
+        TypeLayoutCategoryIterator {
+            refl: self,
+            current: 0,
+            count: self.category_count(),
         }
     }
 
@@ -590,6 +666,15 @@ impl TypeLayout {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_binding_range<'x>(&'x self) -> TypeLayoutBindingRangeIterator<'x> {
+        TypeLayoutBindingRangeIterator {
+            refl: self,
+            current: 0,
+            count: self.binding_range_count(),
+        }
+    }
+
     #[inline]
     pub fn descriptor_set_count(&self) -> SlangInt {
         unsafe { ffi::spReflectionTypeLayout_getDescriptorSetCount(self.0.get()) }
@@ -674,6 +759,15 @@ impl TypeLayout {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_descriptor_set<'x>(&'x self) -> TypeLayoutDescriptorSetIterator<'x> {
+        TypeLayoutDescriptorSetIterator {
+            refl: self,
+            current: 0,
+            count: self.descriptor_set_count(),
+        }
+    }
+
     #[inline]
     pub fn sub_object_range_count(&self) -> SlangInt {
         unsafe { ffi::spReflectionTypeLayout_getSubObjectRangeCount(self.0.get()) }
@@ -718,6 +812,291 @@ impl TypeLayout {
             Some(unsafe { VariableLayout::from_mut_ptr(p) })
         }
     }
+
+    #[inline(always)]
+    pub fn iter_sub_object_range<'x>(&'x self) -> TypeLayoutSubObjectRangeIterator<'x> {
+        TypeLayoutSubObjectRangeIterator {
+            refl: self,
+            current: 0,
+            count: self.sub_object_range_count(),
+        }
+    }
+}
+
+iter_something!(
+    TypeLayoutFieldIterator,
+    TypeLayout,
+    VariableLayout,
+    ffi::spReflectionTypeLayout_GetFieldByIndex,
+    c_uint
+);
+
+pub struct TypeLayoutCategoryIterator<'x> {
+    refl: &'x TypeLayout,
+    current: c_uint,
+    count: c_uint,
+}
+impl<'x> Iterator for TypeLayoutCategoryIterator<'x> {
+    type Item = ParameterCategory;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.count {
+            return None;
+        }
+
+        let r = unsafe {
+            core::mem::transmute(ffi::spReflectionTypeLayout_GetCategoryByIndex(
+                self.refl.0.get(),
+                self.current,
+            ))
+        };
+        self.current += 1;
+        Some(r)
+    }
+}
+
+pub struct TypeLayoutBindingRange<'x> {
+    refl: &'x TypeLayout,
+    index: SlangInt,
+}
+impl<'x> TypeLayoutBindingRange<'x> {
+    #[inline(always)]
+    pub fn r#type(&self) -> BindingType {
+        self.refl.binding_range_type(self.index)
+    }
+
+    #[inline(always)]
+    pub fn is_specializable(&self) -> bool {
+        self.refl.is_binding_range_specializable(self.index)
+    }
+
+    #[inline(always)]
+    pub fn binding_count(&self) -> SlangInt {
+        self.refl.binding_range_binding_count(self.index)
+    }
+
+    #[inline(always)]
+    pub fn leaf_type_layout(&self) -> Option<&mut TypeLayout> {
+        self.refl.binding_range_leaf_type_layout(self.index)
+    }
+
+    #[inline(always)]
+    pub fn leaf_variable(&self) -> Option<&mut Variable> {
+        self.refl.binding_range_leaf_variable(self.index)
+    }
+
+    #[inline(always)]
+    pub fn image_format(&self) -> crate::ImageFormat {
+        self.refl.binding_range_image_format(self.index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_set_index(&self) -> SlangInt {
+        self.refl.binding_range_descriptor_set_index(self.index)
+    }
+
+    #[inline(always)]
+    pub fn first_descriptor_range_index(&self) -> SlangInt {
+        self.refl
+            .binding_range_first_descriptor_range_index(self.index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_count(&self) -> SlangInt {
+        self.refl.binding_range_descriptor_range_count(self.index)
+    }
+}
+
+pub struct TypeLayoutBindingRangeIterator<'x> {
+    refl: &'x TypeLayout,
+    current: SlangInt,
+    count: SlangInt,
+}
+impl<'x> Iterator for TypeLayoutBindingRangeIterator<'x> {
+    type Item = TypeLayoutBindingRange<'x>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.count {
+            return None;
+        }
+
+        let r = TypeLayoutBindingRange {
+            refl: self.refl,
+            index: self.current,
+        };
+        self.current += 1;
+        Some(r)
+    }
+}
+
+pub struct TypeLayoutDescriptorSet<'x> {
+    refl: &'x TypeLayout,
+    index: SlangInt,
+}
+impl<'x> TypeLayoutDescriptorSet<'x> {
+    #[inline(always)]
+    pub fn space_offset(&self) -> SlangInt {
+        self.refl.descriptor_set_space_offset(self.index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_count(&self) -> SlangInt {
+        self.refl.descriptor_set_descriptor_range_count(self.index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_index_offset(&self, range_index: SlangInt) -> SlangInt {
+        self.refl
+            .descriptor_set_descriptor_range_index_offset(self.index, range_index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_descriptor_count(&self, range_index: SlangInt) -> SlangInt {
+        self.refl
+            .descriptor_set_descriptor_range_descriptor_count(self.index, range_index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_type(&self, range_index: SlangInt) -> BindingType {
+        self.refl
+            .descriptor_set_descriptor_range_type(self.index, range_index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_range_category(&self, range_index: SlangInt) -> ParameterCategory {
+        self.refl
+            .descriptor_set_descriptor_range_category(self.index, range_index)
+    }
+
+    #[inline(always)]
+    pub fn iter_descriptor_range(&self) -> TypeLayoutDescriptorSetDescriptorRangeIterator<'x> {
+        TypeLayoutDescriptorSetDescriptorRangeIterator {
+            refl: self.refl,
+            set_index: self.index,
+            current: 0,
+            count: self.descriptor_range_count(),
+        }
+    }
+}
+
+pub struct TypeLayoutDescriptorSetIterator<'x> {
+    refl: &'x TypeLayout,
+    current: SlangInt,
+    count: SlangInt,
+}
+impl<'x> Iterator for TypeLayoutDescriptorSetIterator<'x> {
+    type Item = TypeLayoutDescriptorSet<'x>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.count {
+            return None;
+        }
+
+        let r = TypeLayoutDescriptorSet {
+            refl: self.refl,
+            index: self.current,
+        };
+        self.current += 1;
+        Some(r)
+    }
+}
+
+pub struct TypeLayoutDescriptorSetDescriptorRange<'x> {
+    refl: &'x TypeLayout,
+    set_index: SlangInt,
+    range_index: SlangInt,
+}
+impl<'x> TypeLayoutDescriptorSetDescriptorRange<'x> {
+    #[inline(always)]
+    pub fn index_offset(&self) -> SlangInt {
+        self.refl
+            .descriptor_set_descriptor_range_index_offset(self.set_index, self.range_index)
+    }
+
+    #[inline(always)]
+    pub fn descriptor_count(&self) -> SlangInt {
+        self.refl
+            .descriptor_set_descriptor_range_descriptor_count(self.set_index, self.range_index)
+    }
+
+    #[inline(always)]
+    pub fn r#type(&self) -> BindingType {
+        self.refl
+            .descriptor_set_descriptor_range_type(self.set_index, self.range_index)
+    }
+
+    #[inline(always)]
+    pub fn category(&self) -> ParameterCategory {
+        self.refl
+            .descriptor_set_descriptor_range_category(self.set_index, self.range_index)
+    }
+}
+
+pub struct TypeLayoutDescriptorSetDescriptorRangeIterator<'x> {
+    refl: &'x TypeLayout,
+    set_index: SlangInt,
+    current: SlangInt,
+    count: SlangInt,
+}
+impl<'x> Iterator for TypeLayoutDescriptorSetDescriptorRangeIterator<'x> {
+    type Item = TypeLayoutDescriptorSetDescriptorRange<'x>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.count {
+            return None;
+        }
+
+        let r = TypeLayoutDescriptorSetDescriptorRange {
+            refl: self.refl,
+            set_index: self.set_index,
+            range_index: self.current,
+        };
+        self.current += 1;
+        Some(r)
+    }
+}
+
+pub struct TypeLayoutSubObjectRange<'x> {
+    refl: &'x TypeLayout,
+    index: SlangInt,
+}
+impl<'x> TypeLayoutSubObjectRange<'x> {
+    #[inline(always)]
+    pub fn binding_range_index(&self) -> SlangInt {
+        self.refl.sub_object_range_binding_range_index(self.index)
+    }
+
+    #[inline(always)]
+    pub fn space_offset(&self) -> SlangInt {
+        self.refl.sub_object_range_space_offset(self.index)
+    }
+
+    #[inline(always)]
+    pub fn offset(&self) -> Option<&mut VariableLayout> {
+        self.refl.sub_object_range_offset(self.index)
+    }
+}
+
+pub struct TypeLayoutSubObjectRangeIterator<'x> {
+    refl: &'x TypeLayout,
+    current: SlangInt,
+    count: SlangInt,
+}
+impl<'x> Iterator for TypeLayoutSubObjectRangeIterator<'x> {
+    type Item = TypeLayoutSubObjectRange<'x>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.count {
+            return None;
+        }
+
+        let r = TypeLayoutSubObjectRange {
+            refl: self.refl,
+            index: self.current,
+        };
+        self.current += 1;
+        Some(r)
+    }
 }
 
 #[repr(transparent)]
@@ -757,6 +1136,15 @@ impl Variable {
             None
         } else {
             Some(unsafe { Attribute::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_user_attribute<'x>(&'x self) -> VariableUserAttributeIterator<'x> {
+        VariableUserAttributeIterator {
+            refl: self,
+            current: 0,
+            count: self.user_attribute_count(),
         }
     }
 
@@ -813,6 +1201,14 @@ impl Variable {
     }
 }
 
+iter_something!(
+    VariableUserAttributeIterator,
+    Variable,
+    Attribute,
+    ffi::spReflectionVariable_GetUserAttribute,
+    c_uint
+);
+
 #[repr(transparent)]
 pub struct VariableLayout(UnsafeCell<ffi::SlangReflectionVariableLayout>);
 impl VariableLayout {
@@ -857,6 +1253,11 @@ impl VariableLayout {
     #[inline(always)]
     pub fn category_by_index(&self, index: c_uint) -> ParameterCategory {
         self.type_layout().category(index)
+    }
+
+    #[inline(always)]
+    pub fn iter_category<'x>(&'x self) -> TypeLayoutCategoryIterator<'x> {
+        self.type_layout().iter_category()
     }
 
     #[inline]
@@ -949,6 +1350,15 @@ impl Function {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_parameter<'x>(&'x self) -> FunctionParameterIterator<'x> {
+        FunctionParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.parameter_count(),
+        }
+    }
+
     #[inline]
     pub fn user_attribute_count(&self) -> c_uint {
         unsafe { ffi::spReflectionFunction_GetUserAttributeCount(self.0.get()) }
@@ -960,6 +1370,15 @@ impl Function {
             None
         } else {
             Some(unsafe { Attribute::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_user_attribute<'x>(&'x self) -> FunctionUserAttributeIterator<'x> {
+        FunctionUserAttributeIterator {
+            refl: self,
+            current: 0,
+            count: self.user_attribute_count(),
         }
     }
 
@@ -1039,7 +1458,38 @@ impl Function {
             Some(unsafe { Function::from_mut_ptr(p) })
         }
     }
+
+    #[inline(always)]
+    pub fn iter_overload<'x>(&'x self) -> FunctionOverloadIterator<'x> {
+        FunctionOverloadIterator {
+            refl: self,
+            current: 0,
+            count: self.overload_count(),
+        }
+    }
 }
+
+iter_something!(
+    FunctionParameterIterator,
+    Function,
+    Variable,
+    ffi::spReflectionFunction_GetParameter,
+    c_uint
+);
+iter_something!(
+    FunctionUserAttributeIterator,
+    Function,
+    Attribute,
+    ffi::spReflectionFunction_GetUserAttribute,
+    c_uint
+);
+iter_something!(
+    FunctionOverloadIterator,
+    Function,
+    Function,
+    ffi::spReflectionFunction_getOverload,
+    c_uint
+);
 
 #[repr(transparent)]
 pub struct Generic(UnsafeCell<ffi::SlangReflectionGeneric>);
@@ -1072,6 +1522,15 @@ impl Generic {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_type_parameter<'x>(&'x self) -> GenericTypeParameterIterator<'x> {
+        GenericTypeParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.type_parameter_count(),
+        }
+    }
+
     #[inline]
     pub fn value_parameter_count(&self) -> c_uint {
         unsafe { ffi::spReflectionGeneric_GetValueParameterCount(self.0.get()) }
@@ -1083,6 +1542,15 @@ impl Generic {
             None
         } else {
             Some(unsafe { Variable::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_value_parameter<'x>(&'x self) -> GenericValueParameterIterator<'x> {
+        GenericValueParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.value_parameter_count(),
         }
     }
 
@@ -1164,6 +1632,21 @@ impl Generic {
     }
 }
 
+iter_something!(
+    GenericTypeParameterIterator,
+    Generic,
+    Variable,
+    ffi::spReflectionGeneric_GetTypeParameter,
+    c_uint
+);
+iter_something!(
+    GenericValueParameterIterator,
+    Generic,
+    Variable,
+    ffi::spReflectionGeneric_GetValueParameter,
+    c_uint
+);
+
 #[repr(transparent)]
 pub struct EntryPoint(UnsafeCell<ffi::SlangReflectionEntryPoint>);
 impl EntryPoint {
@@ -1201,6 +1684,15 @@ impl EntryPoint {
             None
         } else {
             Some(unsafe { VariableLayout::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_parameter<'x>(&'x self) -> EntryPointParameterIterator<'x> {
+        EntryPointParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.parameter_count(),
         }
     }
 
@@ -1262,6 +1754,14 @@ impl EntryPoint {
     }
 }
 
+iter_something!(
+    EntryPointParameterIterator,
+    EntryPoint,
+    VariableLayout,
+    ffi::spReflectionEntryPoint_getParameterByIndex,
+    c_uint
+);
+
 #[repr(transparent)]
 pub struct TypeParameter(UnsafeCell<ffi::SlangReflectionTypeParameter>);
 impl TypeParameter {
@@ -1286,7 +1786,7 @@ impl TypeParameter {
         unsafe { ffi::spReflectionTypeParameter_GetConstraintCount(self.0.get()) }
     }
 
-    pub fn constraint(&self, index: c_int) -> Option<&mut Type> {
+    pub fn constraint(&self, index: c_uint) -> Option<&mut Type> {
         let p = unsafe { ffi::spReflectionTypeParameter_GetConstraintByIndex(self.0.get(), index) };
         if p.is_null() {
             None
@@ -1294,7 +1794,24 @@ impl TypeParameter {
             Some(unsafe { Type::from_mut_ptr(p) })
         }
     }
+
+    #[inline(always)]
+    pub fn iter_constraint<'x>(&'x self) -> TypeParameterConstraintIterator<'x> {
+        TypeParameterConstraintIterator {
+            refl: self,
+            current: 0,
+            count: self.constraint_count(),
+        }
+    }
 }
+
+iter_something!(
+    TypeParameterConstraintIterator,
+    TypeParameter,
+    Type,
+    ffi::spReflectionTypeParameter_GetConstraintByIndex,
+    c_uint
+);
 
 #[repr(transparent)]
 pub struct Shader(UnsafeCell<ffi::SlangReflection>);
@@ -1340,12 +1857,30 @@ impl Shader {
         }
     }
 
+    #[inline(always)]
+    pub fn iter_type_parameter<'x>(&'x self) -> ShaderTypeParameterIterator<'x> {
+        ShaderTypeParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.type_parameter_count(),
+        }
+    }
+
     pub fn parameter(&self, index: c_uint) -> Option<&mut VariableLayout> {
         let p = unsafe { ffi::spReflection_GetParameterByIndex(self.0.get(), index) };
         if p.is_null() {
             None
         } else {
             Some(unsafe { VariableLayout::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_parameter<'x>(&'x self) -> ShaderParameterIterator<'x> {
+        ShaderParameterIterator {
+            refl: self,
+            current: 0,
+            count: self.parameter_count(),
         }
     }
 
@@ -1360,6 +1895,15 @@ impl Shader {
             None
         } else {
             Some(unsafe { EntryPoint::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_entry_point<'x>(&'x self) -> ShaderEntryPointIterator<'x> {
+        ShaderEntryPointIterator {
+            refl: self,
+            current: 0,
+            count: self.entry_point_count(),
         }
     }
 
@@ -1541,6 +2085,28 @@ impl Shader {
     }
 }
 
+iter_something!(
+    ShaderTypeParameterIterator,
+    Shader,
+    TypeParameter,
+    ffi::spReflection_GetTypeParameterByIndex,
+    c_uint
+);
+iter_something!(
+    ShaderParameterIterator,
+    Shader,
+    VariableLayout,
+    ffi::spReflection_GetParameterByIndex,
+    c_uint
+);
+iter_something!(
+    ShaderEntryPointIterator,
+    Shader,
+    EntryPoint,
+    ffi::spReflection_getEntryPointByIndex,
+    SlangUInt
+);
+
 #[repr(transparent)]
 pub struct Decl(UnsafeCell<ffi::SlangReflectionDecl>);
 impl Decl {
@@ -1569,6 +2135,15 @@ impl Decl {
             None
         } else {
             Some(unsafe { Decl::from_mut_ptr(p) })
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_child<'d>(&'d self) -> DeclChildrenIterator<'d> {
+        DeclChildrenIterator {
+            refl: self,
+            current: 0,
+            count: self.children_count(),
         }
     }
 
@@ -1617,6 +2192,14 @@ impl Decl {
         }
     }
 }
+
+iter_something!(
+    DeclChildrenIterator,
+    Decl,
+    Decl,
+    ffi::spReflectionDecl_getChild,
+    c_uint
+);
 
 #[repr(transparent)]
 pub struct Modifier(UnsafeCell<ffi::SlangReflectionModifier>);

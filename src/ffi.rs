@@ -888,7 +888,7 @@ unsafe extern "C" {
     ) -> c_uint;
     pub fn spReflectionTypeParameter_GetConstraintByIndex(
         type_param: *mut SlangReflectionTypeParameter,
-        index: c_int,
+        index: c_uint,
     ) -> *mut SlangReflectionType;
 
     pub fn spReflection_GetParameterCount(reflection: *mut SlangReflection) -> c_uint;
