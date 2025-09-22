@@ -441,7 +441,7 @@ impl Default for SlangGlobalSessionDesc {
     }
 }
 
-#[link(name = "slang")]
+#[link(name = "shader-slang")]
 unsafe extern "C" {
     pub fn spGetBuildTagString() -> *const c_char;
     pub fn slang_createGlobalSession2(
