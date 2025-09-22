@@ -1216,16 +1216,17 @@ pub trait ISession: IUnknown {
         path: &CStr,
         source: &impl IBlob,
         out_diagnostics: Option<&mut MaybeUninit<IBlobPtr>>,
-    ) -> IModulePtr {
-        IModulePtr(unsafe {
-            NonNull::new_unchecked((ISession::vt(self).load_module_from_source)(
+    ) -> Option<IModulePtr> {
+        NonNull::new(unsafe {
+            (ISession::vt(self).load_module_from_source)(
                 self.thisptr(),
                 module_name.as_ptr(),
                 path.as_ptr(),
                 source.thisptr(),
                 out_diagnostics.map_or_else(core::ptr::null_mut, MaybeUninit::as_mut_ptr) as _,
-            ))
+            )
         })
+        .map(IModulePtr)
     }
 
     fn create_composite_component_type(
@@ -1392,16 +1393,17 @@ pub trait ISession: IUnknown {
         path: &CStr,
         source: &impl IBlob,
         out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
-    ) -> IModulePtr {
-        IModulePtr(unsafe {
-            NonNull::new_unchecked((ISession::vt(self).load_module_from_ir_blob)(
+    ) -> Option<IModulePtr> {
+        NonNull::new(unsafe {
+            (ISession::vt(self).load_module_from_ir_blob)(
                 self.thisptr(),
                 module_name.as_ptr(),
                 path.as_ptr(),
                 source.thisptr(),
                 out_diagnostics.map_or_else(core::ptr::null_mut, MaybeUninit::as_mut_ptr) as _,
-            ))
+            )
         })
+        .map(IModulePtr)
     }
 
     #[inline]
@@ -1441,16 +1443,17 @@ pub trait ISession: IUnknown {
         path: &CStr,
         string: &CStr,
         out_diagnostics: Option<&mut MaybeUninit<Option<IBlobPtr>>>,
-    ) -> IModulePtr {
-        IModulePtr(unsafe {
-            NonNull::new_unchecked((ISession::vt(self).load_module_from_source_string)(
+    ) -> Option<IModulePtr> {
+        NonNull::new(unsafe {
+            (ISession::vt(self).load_module_from_source_string)(
                 self.thisptr(),
                 module_name.as_ptr(),
                 path.as_ptr(),
                 string.as_ptr(),
                 out_diagnostics.map_or_else(core::ptr::null_mut, MaybeUninit::as_mut_ptr) as _,
-            ))
+            )
         })
+        .map(IModulePtr)
     }
 
     fn get_dynamic_object_rtti_bytes(
